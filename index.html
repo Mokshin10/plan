@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мои Рецепты - Кулинарная книга</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="styles.css">
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+</head>
+<body class="theme-arch">
+
+    <!-- Модальное окно авторизации -->
+    <div id="authModal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" id="closeAuthModal">
+                <i class="fas fa-times"></i>
+            </button>
+            <h2 class="modal-title">
+                <i class="fas fa-lock"></i> Требуется авторизация
+            </h2>
+            <p class="modal-text">Для редактирования рецептов необходимо войти в систему.</p>
+
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input type="email" id="loginEmail" class="form-input" placeholder="email@example.com">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Пароль</label>
+                <input type="password" id="loginPassword" class="form-input" placeholder="Минимум 6 символов">
+            </div>
+            <div id="authStatus" class="status-message"></div>
+            <div class="modal-buttons">
+                <button id="loginBtn" class="btn btn-success">
+                    <i class="fas fa-sign-in-alt"></i> Войти
+                </button>
+                <button id="registerBtn" class="btn btn-primary">
+                    <i class="fas fa-user-plus"></i> Регистрация
+                </button>
+            </div>
+            <div class="modal-buttons" style="margin-top:10px;">
+                <button id="cancelAuthBtn" class="btn btn-secondary" style="flex:1;">
+                    <i class="fas fa-times"></i> Отмена
+                </button>
+            </div>
+            <div class="auth-info">
+                <small>Введите Email и Пароль для входа или регистрации</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Компактная панель управления -->
+        <div class="control-panel">
+            <button id="logoutBtn" class="control-btn logout-btn" style="display:none;" title="Выйти">
+                <i class="fas fa-sign-out-alt"></i><span class="control-text">Выйти</span>
+            </button>
+            <button id="loginBtnMain" class="control-btn login-btn" title="Войти">
+                <i class="fas fa-sign-in-alt"></i><span class="control-text">Войти</span>
+            </button>
+
+            <div id="modeIndicator" class="mode-indicator">
+                <i class="fas fa-user" id="modeIcon"></i>
+                <span id="modeText" class="mode-text">Гость</span>
+            </div>
+
+            <div class="theme-selector">
+                <div class="theme-btn arch active" data-theme="arch" title="Arch Linux">
+                    <i class="fab fa-linux"></i><span class="theme-text">Arch</span>
+                </div>
+                <div class="theme-btn rosepine" data-theme="rosepine" title="Rosé Pine">
+                    <i class="fas fa-moon"></i><span class="theme-text">Rose</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Шапка -->
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon"><i class="fas fa-utensils"></i></div>
+                <div>
+                    <div class="logo-text">Мои Рецепты</div>
+                    <div class="logo-subtext">Кулинарная книга и список покупок</div>
+                </div>
+            </div>
+            <div class="selection-info">
+                <span id="selectedCount" class="selected-badge" style="display:none;">
+                    <i class="fas fa-check-circle"></i> <span id="selectedCountNum">0</span> выбрано
+                </span>
+            </div>
+        </header>
+
+        <!-- Поиск -->
+        <div class="search-container">
+            <input type="text" id="searchInput" class="search-input"
+                   placeholder="Поиск по названиям, ингредиентам, шагам...">
+            <div class="search-icon"><i class="fas fa-search"></i></div>
+        </div>
+
+        <div class="search-results-info hidden" id="searchResultsInfo">
+            <div>
+                <span id="resultsCount">0</span> результатов по запросу "<span id="currentSearchTerm"></span>"
+            </div>
+            <button class="clear-search" id="clearSearchBtn">
+                <i class="fas fa-times"></i> Очистить
+            </button>
+        </div>
+
+        <div class="status-message" id="statusMessage"></div>
+
+        <!-- Основной контент -->
+        <main class="main-content">
+            <!-- Левая колонка: рецепты -->
+            <section class="car-info">
+                <h2 class="section-title">
+                    <div><i class="fas fa-book-open"></i> Рецепты</div>
+                </h2>
+
+                <div class="sort-controls">
+                    <div class="sort-label">Сортировать по:</div>
+                    <div class="sort-buttons">
+                        <button class="sort-btn active" data-sort="date">
+                            <i class="fas fa-clock"></i> Дата
+                        </button>
+                        <button class="sort-btn" data-sort="name">
+                            <i class="fas fa-sort-alpha-down"></i> Название
+                        </button>
+                        <button class="sort-btn" data-sort="servings">
+                            <i class="fas fa-users"></i> Порции
+                        </button>
+                    </div>
+                </div>
+
+                <div class="repairs-container" id="recipesContainer">
+                    <div class="no-repairs">
+                        <i class="fas fa-spinner fa-spin"></i>
+                        <p>Загрузка рецептов...</p>
+                    </div>
+                </div>
+
+                <div class="text-center mt-20">
+                    <button id="addRecipeBtn" class="btn btn-success">
+                        <i class="fas fa-plus"></i> Добавить рецепт
+                    </button>
+                </div>
+            </section>
+
+            <!-- Правая колонка: список покупок + редактор -->
+            <section class="car-info">
+                <!-- Список покупок -->
+                <h2 class="section-title">
+                    <div><i class="fas fa-shopping-cart"></i> Список покупок</div>
+                </h2>
+
+                <div id="shoppingList" class="shopping-list">
+                    <div class="no-items">Выберите рецепты (чекбоксы), чтобы сформировать список</div>
+                </div>
+
+                <div style="margin-top:10px; display:none;" id="clearSelectionWrap">
+                    <button id="clearSelectionBtn" class="btn btn-secondary" style="width:100%;">
+                        <i class="fas fa-times"></i> Сбросить выбор
+                    </button>
+                </div>
+
+                <!-- Форма добавления -->
+                <div id="addRecipeForm" class="add-repair-form">
+                    <h2 class="section-title" style="margin-top:20px;">
+                        <div><i class="fas fa-plus-circle"></i> Новый рецепт</div>
+                    </h2>
+
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-robot"></i> Пример структуры для ИИ
+                        </label>
+                        <div class="data-example">
+                            <div class="data-example-title">
+                                <i class="fas fa-info-circle"></i> Скопируйте пример и отправьте ИИ с вашим рецептом
+                                <button class="copy-btn" id="copyExampleBtn" style="margin-left:auto;">
+                                    <i class="fas fa-copy"></i> Копировать
+                                </button>
+                            </div>
+                            <pre id="codeExampleText">Загрузка...</pre>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">JSON рецепта (или массив рецептов)</label>
+                        <textarea id="recipeJsonInput" class="form-textarea code-textarea" rows="12"
+                                  placeholder="Вставьте сюда JSON, полученный от ИИ..."></textarea>
+                        <small style="color:var(--text); font-size:12px; display:block; margin-top:6px;">
+                            Поддерживается один объект или массив. Markdown-обёртки ```json``` тоже обрабатываются.
+                        </small>
+                    </div>
+
+                    <div class="form-group">
+                        <button id="addSampleTemplateBtn" class="btn btn-warning" style="width:100%;">
+                            <i class="fas fa-file-code"></i> Вставить пример
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <button id="saveRecipeBtn" class="btn btn-success" style="width:100%;">
+                            <i class="fas fa-save"></i> Сохранить
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <button id="cancelAddBtn" class="btn btn-secondary" style="width:100%;">
+                            <i class="fas fa-times"></i> Отмена
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Форма редактирования -->
+                <div id="editRecipeForm" class="edit-repair-form">
+                    <h2 class="section-title" style="margin-top:20px;">
+                        <div><i class="fas fa-edit"></i> Редактирование</div>
+                    </h2>
+                    <input type="hidden" id="editRecipeId">
+
+                    <div class="form-group">
+                        <label class="form-label">JSON рецепта</label>
+                        <textarea id="editRecipeJsonInput" class="form-textarea code-textarea" rows="14"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <button id="updateRecipeBtn" class="btn btn-success" style="width:100%;">
+                            <i class="fas fa-save"></i> Обновить
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <button id="cancelEditBtn" class="btn btn-secondary" style="width:100%;">
+                            <i class="fas fa-times"></i> Отмена
+                        </button>
+                    </div>
+
+                    <div class="form-group">
+                        <button id="deleteRecipeBtn" class="btn btn-danger" style="width:100%;">
+                            <i class="fas fa-trash"></i> Удалить рецепт
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p>Кулинарная книга | <span id="themeName">Arch Linux</span> | <span id="userInfo">Гостевой доступ</span></p>
+        </footer>
+    </div>
+
+    <script src="firebase-config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
